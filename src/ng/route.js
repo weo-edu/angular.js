@@ -11,7 +11,10 @@
  * Used for configuring routes. See {@link ng.$route $route} for an example.
  */
 function $RouteProvider(){
-  var routes = {};
+  var routes = {},
+      options = {
+        strict: true
+      };
 
   /**
    * @ngdoc method
@@ -71,8 +74,12 @@ function $RouteProvider(){
    * @description
    * Adds a new route definition to the `$route` service.
    */
-  this.when = function(path, route) {
-    routes[path] = extend({reloadOnSearch: true}, route);
+  this.when = function(path, route, opts) {
+    routes[path] = extend(
+      {reloadOnSearch: true}, 
+      route,
+      path && pathRegExp(path, extend(options, opts))
+    );
 
     // create redirection for trailing slashes
     if (path) {
@@ -80,11 +87,49 @@ function $RouteProvider(){
           ? path.substr(0, path.length-1)
           : path +'/';
 
-      routes[redirectPath] = {redirectTo: path};
+      routes[redirectPath] = extend(
+        {redirectTo: path},
+        pathRegExp(redirectPath, extend(options, opts))
+      );
     }
 
     return this;
   };
+
+  //  http://github.com/visionmedia/express
+  function pathRegExp(path, opts) {
+    var sensitive = opts.sensitive,
+        strict = opts.strict,
+        ret = {
+          originalPath: path,
+          regexp: path
+        },
+        keys = ret.keys = [];
+
+    if (path instanceof RegExp) return ret;
+
+    path = path
+      .replace(/([\\\(\)\^\$])/g, "\\$1")
+      .replace(/\.\.\.$/g, '(?:.*)')
+      .concat(strict ? '' : '/?')
+      .replace(/\/\(/g, '(?:/')
+      .replace(/(\/)?(\.)?:(\w+)(?:(\(.*?\)))?(\?)?(\*)?/g, function(_, slash, format, key, capture, optional, star){
+        keys.push({ name: key, optional: !! optional });
+        slash = slash || '';
+        return ''
+          + (optional ? '' : slash)
+          + '(?:'
+          + (optional ? slash : '')
+          + (format || '') + (capture || (format && '([^/.]+?)' || '([^/]+?)')) + ')'
+          + (optional || '')
+          + (star ? '(/*)?' : '');
+      })
+      .replace(/([\/.])/g, '\\$1')
+      .replace(/\*/g, '(.*)');
+
+    ret.regexp = new RegExp('^' + path + '$', sensitive ? '' : 'i')
+    return ret
+  }
 
   /**
    * @ngdoc method
@@ -102,6 +147,24 @@ function $RouteProvider(){
     this.when(null, params);
     return this;
   };
+
+  /*
+   * @ngdoc method
+   * @name ng.$routeProvider#options
+   * @methodOf ng$routeProvider
+   *
+   * @description
+   * Options fore route matching.
+   *   - `sensitive` enable case-sensitive routes
+   *   - `strict` disable strict matching for trailing slashes
+   */
+  
+  this.options = function(opts) {
+    extend(options, opts);
+    return this;
+  }
+
+
 
 
   this.$get = ['$rootScope', '$location', '$routeParams', '$q', '$injector', '$http', '$templateCache',
@@ -315,28 +378,32 @@ function $RouteProvider(){
 
     /////////////////////////////////////////////////////
 
-    function switchRouteMatcher(on, when) {
-      // TODO(i): this code is convoluted and inefficient, we should construct the route matching
-      //   regex only once and then reuse it
-      var regex = '^' + when.replace(/([\.\\\(\)\^\$])/g, "\\$1") + '$',
-          params = [],
-          dst = {};
-      forEach(when.split(/[^\w:]/), function(param) {
-        if (param && param.charAt(0) === ':') {
-          var paramRegExp = new RegExp(param + "([\\W])");
-          if (regex.match(paramRegExp)) {
-            regex = regex.replace(paramRegExp, "([^\\/]*)$1");
-            params.push(param.substr(1));
-          }
+    // http://github.com/visionmedia/express
+    function switchRouteMatcher(on, route) {
+      var keys = route.keys,
+          params = {};
+
+      if (!route.regexp) return null;
+
+      var m = route.regexp.exec(on);
+      if (!m) return null;
+
+      var N = 0;
+      for (var i = 1, len = m.length; i < len; ++i) {
+        var key = keys[i - 1];
+
+        var val = 'string' == typeof m[i]
+          ? decodeURIComponent(m[i])
+          : m[i];
+
+        if (key) {
+          params[key.name] = val;
+        } else {
+          params[N++] = val;
         }
-      });
-      var match = on.match(new RegExp(regex));
-      if (match) {
-        forEach(params, function(name, index) {
-          dst[name] = match[index + 1];
-        });
       }
-      return match ? dst : null;
+
+      return params;
     }
 
     function updateRoute() {
@@ -418,7 +485,7 @@ function $RouteProvider(){
       // Match a route
       var params, match;
       forEach(routes, function(route, path) {
-        if (!match && (params = matcher($location.path(), path))) {
+        if (!match && (params = matcher($location.path(), route))) {
           match = inherit(route, {
             params: extend({}, $location.search(), params),
             pathParams: params});

@@ -29,4 +29,78 @@ describe('$routeParams', function() {
       expect($routeParams).toEqual({bar:'barvalue', foo:'foovalue'});
     });
   });
+
+  it('should correctly extract the params when an optional param name is part of the route',  function() {
+    module(function($routeProvider) {
+      $routeProvider.when('/bar/:foo?', {});
+    });
+
+    inject(function($rootScope, $route, $location, $routeParams) {
+      $location.path('/bar');
+      $rootScope.$digest();
+      expect($routeParams).toEqual({});
+
+      $location.path('/bar/foovalue');
+      $rootScope.$digest();
+      expect($routeParams).toEqual({foo: 'foovalue'});
+
+    });
+  });
+
+  it('should correctly extract the params when a wildcard is part of the route',  function() {
+    module(function($routeProvider) {
+      $routeProvider.when('/bar/*', {});
+    });
+
+    inject(function($rootScope, $route, $location, $routeParams) {
+      $location.path('/bar');
+      $rootScope.$digest();
+      expect($routeParams).toEqual({});
+
+      $location.path('/bar/foovalue');
+      $rootScope.$digest();
+      expect($routeParams).toEqual({0: 'foovalue'});
+
+    });
+  });
+
+  it('should correctly extract the params when multiple wildcards are part of the route',  function() {
+    module(function($routeProvider) {
+      $routeProvider.when('/bar/*.*', {});
+    });
+
+    inject(function($rootScope, $route, $location, $routeParams) {
+      $location.path('/bar/foo.js');
+      $rootScope.$digest();
+      expect($routeParams).toEqual({0: 'foo', 1: 'js'});
+    });
+  });
+
+  it('should correctly extract params when route is a regex', function() {
+    module(function($routeProvider) {
+      $routeProvider.when(/\/(\d+)/, {});
+    });
+
+    inject(function($rootScope, $route, $location, $routeParams) {
+      $location.path('/12');
+      $rootScope.$digest();
+      expect($routeParams).toEqual({0: '12'});
+    });
+  });
+
+  it('should correctly ignore params in ellipsees', function() {
+    module(function($routeProvider) {
+      $routeProvider.when('/bar/...', {});
+    });
+
+    inject(function($rootScope, $route, $location, $routeParams) {
+      $location.path('/bar/foovalue');
+      $rootScope.$digest();
+      expect($routeParams).toEqual({});
+
+    });
+
+  });
+
+
 });
