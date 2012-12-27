@@ -173,6 +173,9 @@ describe('ngView', function() {
       $httpBackend.whenGET('viewPartial.html').respond('content');
       $location.path('/foo');
 
+      // nested ngViews not allowed
+      delete $rootScope.$$ngView;
+
       var elm = $compile(
         '<div>' +
           'include: <ng:include src="\'includePartial.html\'"> </ng:include>' +
@@ -458,5 +461,80 @@ describe('ngView', function() {
 
       expect(div.controller()).toBe($route.current.scope.ctrl);
     });
+  });
+
+
+  it('should render nested views', function() {
+
+
+    function RootViewCtrl($scope) {
+      $scope.$router = function(router) {
+        router.when('/foo/:bar', {templateUrl: 'childTpl.html', controller: ChildViewCtrl});
+      }
+    }
+
+    function ChildViewCtrl($scope) {
+      $scope.state = 'WORKS';
+    }
+
+    module(function($routeProvider) {
+      $routeProvider.when('/foo/*', {templateUrl: 'tpl.html', controller: RootViewCtrl});
+    });
+
+    inject(function($templateCache, $location, $rootScope, $route) {
+      $templateCache.put('tpl.html', [200, '<div><ng:view></ng:view><div>', {}]);
+      $templateCache.put('childTpl.html', [200, '<div>{{state}}</div>', {}]);
+
+      $location.url('/foo/bar');
+      $rootScope.$digest();
+      expect(element.text()).toEqual('WORKS');
+
+    });
+
+  });
+
+  it('should not rerender route when child route changes', function() {
+
+    function RootViewCtrl($scope) {
+      $scope.$router = function(router) {
+        router.when('/foo/tpl1', {templateUrl: 'childTpl.html', controller: ChildViewCtrl});
+        router.when('/foo/tpl2', {templateUrl: 'childTpl2.html', controller: ChildViewCtrl});
+      }
+    }
+
+    function ChildViewCtrl($scope) {
+      $scope.state = 'WORKS';
+    }
+
+    module(function($routeProvider) {
+      $routeProvider.when('/foo/*', {
+        templateUrl: 'tpl.html', 
+        controller: RootViewCtrl, 
+        reloadOnParams: false}
+        );
+    });
+
+    inject(function($templateCache, $location, $rootScope, $route) {
+      $templateCache.put('tpl.html', [200, '<div id="tpl"><ng:view></ng:view><div>', {}]);
+      $templateCache.put('childTpl.html', [200, '<div>{{state}}</div>', {}]);
+      $templateCache.put('childTpl2.html', [200, '<div>{{state}}2</div>', {}]);
+ 
+      $location.url('/foo/tpl1');
+      $rootScope.$digest();
+      expect(element.text()).toEqual('WORKS');
+      var parent = element.children()[0];
+
+      $location.url('/foo/tpl2');
+      $rootScope.$digest();
+      expect(element.text()).toEqual('WORKS2');
+      expect(element.children()[0]).toBe(parent);
+
+      $route.reload();
+      $rootScope.$digest();
+      expect(element.text()).toEqual('WORKS2');
+      expect(element.children()[0]).not.toBe(parent);
+
+    });
+
   });
 });
