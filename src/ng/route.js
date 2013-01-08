@@ -110,7 +110,7 @@ function $RouteProvider(){
 
     path = path
       .replace(/([\\\(\)\^\$])/g, "\\$1")
-      .replace(/\.\.\.$/g, '(?:.*)')
+      .replace(/\.\.\.$/g, opts.noEllipsis ? '': '(?:.*)')
       .concat(strict ? '' : '/?')
       .replace(/\/\(/g, '(?:/')
       .replace(/(\/)?(\.)?:(\w+)(?:(\(.*?\)))?(\?)?(\*)?/g, function(_, slash, format, key, capture, optional, star){
