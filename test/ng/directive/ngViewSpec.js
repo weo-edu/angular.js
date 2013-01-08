@@ -469,7 +469,7 @@ describe('ngView', function() {
 
     function RootViewCtrl($scope) {
       $scope.$router = function(router) {
-        router.when('/foo/:bar', {templateUrl: 'childTpl.html', controller: ChildViewCtrl});
+        router.when(':bar', {templateUrl: 'childTpl.html', controller: ChildViewCtrl});
       }
     }
 
@@ -478,7 +478,7 @@ describe('ngView', function() {
     }
 
     module(function($routeProvider) {
-      $routeProvider.when('/foo/*', {templateUrl: 'tpl.html', controller: RootViewCtrl});
+      $routeProvider.when('/foo/...', {templateUrl: 'tpl.html', controller: RootViewCtrl});
     });
 
     inject(function($templateCache, $location, $rootScope, $route) {
@@ -497,8 +497,8 @@ describe('ngView', function() {
 
     function RootViewCtrl($scope) {
       $scope.$router = function(router) {
-        router.when('/foo/tpl1', {templateUrl: 'childTpl.html', controller: ChildViewCtrl});
-        router.when('/foo/tpl2', {templateUrl: 'childTpl2.html', controller: ChildViewCtrl});
+        router.when('tpl1', {templateUrl: 'childTpl.html', controller: ChildViewCtrl});
+        router.when('tpl2', {templateUrl: 'childTpl2.html', controller: ChildViewCtrl});
       }
     }
 
@@ -507,10 +507,9 @@ describe('ngView', function() {
     }
 
     module(function($routeProvider) {
-      $routeProvider.when('/foo/*', {
+      $routeProvider.when('/foo/...', {
         templateUrl: 'tpl.html', 
-        controller: RootViewCtrl, 
-        reloadOnParams: false}
+        controller: RootViewCtrl}
         );
     });
 

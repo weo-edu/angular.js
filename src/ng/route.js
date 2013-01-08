@@ -36,6 +36,15 @@ function $RouteProvider(){
       var key = scopeKey(scope);
       delete scopedRoutes[key];
     }
+
+    function scoped(scope) {
+      var key = scopeKey(scope);
+      if (key in scopedRoutes)
+        return scopedRoutes[key];
+      else {
+        return scoped(scope.$parent);
+      }
+    }
   
     // the root routes have null scope
     addScope(null);
@@ -98,23 +107,28 @@ function $RouteProvider(){
    * @description
    * Adds a new route definition to the `$route` service.
    */
+  var trailingRegex = /^.*(\.\.\.|\*)$/g;
   function when(scope, path, route, opts) {
 
+    if (this.base && isString(path) && path[0] !== '/') {
+      path = this.base + path;
+    }
+
     pushRoute(scope, extend(
-      {reloadOnSearch: true, reloadOnParams: true}, 
+      {reloadOnSearch: true}, 
       route,
-      path && pathRegExp(path, extend(options, opts))
+      path && pathRegExp(path, extend({}, options, opts))
     ));
 
     // create redirection for trailing slashes
-    if (path) {
-      var redirectPath = (path[path.length-1] == '/')
+    if (path && !trailingRegex.exec(path)) {
+      var redirectPath = (path[path.length-1] === '/')
           ? path.substr(0, path.length-1)
           : path +'/';
 
       pushRoute(scope, extend(
         {redirectTo: path},
-        pathRegExp(redirectPath, extend(options, opts))
+        pathRegExp(redirectPath, extend({}, options, opts))
       ));
     }
 
@@ -137,7 +151,6 @@ function $RouteProvider(){
 
     path = path
       .replace(/([\\\(\)\^\$])/g, "\\$1")
-      .replace(/\.\.\.$/g, opts.noEllipsis ? '': '(?:.*)')
       .concat(strict ? '' : '/?')
       .replace(/\/\(/g, '(?:/')
       .replace(/(\/)?(\.)?:(\w+)(?:(\(.*?\)))?(\?)?(\*)?/g, function(_, slash, format, key, capture, optional, star){
@@ -152,9 +165,13 @@ function $RouteProvider(){
           + (star ? '(/*)?' : '');
       })
       .replace(/([\/.])/g, '\\$1')
-      .replace(/\*/g, '(.*)');
+      .replace(/\*/g, '(.*)')
+      .replace(/\\.\\.\\.$/g, function(a, b) {
+        ret.ellipsis = true;
+        return ''
+      });
 
-    ret.regexp = new RegExp('^' + path + '$', sensitive ? '' : 'i')
+    ret.regexp = new RegExp('^' + path + (ret.ellipsis ? '' : '$'), sensitive ? '' : 'i');
     return ret
   }
 
@@ -175,7 +192,7 @@ function $RouteProvider(){
         routes = scopedRoutes[key].routes;
 
     routes[null] = extend(
-      {reloadOnSearch: true, reloadOnParams: true}, 
+      {reloadOnSearch: true}, 
       params);
     return this;
    }
@@ -197,26 +214,6 @@ function $RouteProvider(){
     extend(options, opts);
     return this;
   }
-
-
-
-  /*
-   * @ngdoc method
-   * @name ng.$routeProvider#options
-   * @methodOf ng$routeProvider
-   *
-   * @description
-   * Options fore route matching.
-   *   - `sensitive` enable case-sensitive routes
-   *   - `strict` disable strict matching for trailing slashes
-   */
-  
-  this.options = function(opts) {
-    extend(options, opts);
-    return this;
-  }
-
-
 
 
   this.$get = ['$rootScope', '$location', '$routeParams', '$q', '$injector', '$http', '$templateCache',
@@ -464,20 +461,14 @@ function $RouteProvider(){
             });
 
             var ret = {};
+            ret.base = basePath(scope.$parent);
             ret.when = bind(ret, when, scope);
             ret.otherwise = bind(ret, otherwise, scope);
             ret.updateRoute = bind(null, updateRoute, scope);
             return ret;
           },
 
-          scoped: function(scope) {
-            var key = scopeKey(scope);
-            if (key in scopedRoutes)
-              return scopedRoutes[key];
-            else {
-              return $route.scoped(scope.$parent);
-            }
-          }
+          scoped: scoped
         };
 
     $route.__defineGetter__('current', function() {
@@ -491,6 +482,12 @@ function $RouteProvider(){
     return $route;
 
     /////////////////////////////////////////////////////
+    
+    function basePath(scope) {
+      var current  = $route.scoped(scope).current;
+      if (!current) return;
+      return current.base;
+    }
 
     // http://github.com/visionmedia/express
     function switchRouteMatcher(on, route) {
@@ -499,8 +496,13 @@ function $RouteProvider(){
 
       if (!route.regexp) return null;
 
+
+
       var m = route.regexp.exec(on);
       if (!m) return null;
+
+      if (route.ellipsis)
+        route.base = m[0];
 
       var N = 0;
       for (var i = 1, len = m.length; i < len; ++i) {
@@ -526,8 +528,9 @@ function $RouteProvider(){
           last = route.current;
 
       if (next && last && next.$route === last.$route && 
-          (!next.reloadOnParams || equals(next.pathParams, last.pathParams) && !next.reloadOnSearch) && 
-          !forceReload) {
+        equals(next.pathParams, last.pathParams) && 
+        (!(!equals(next.params, last.params) && next.reloadOnSearch)) && 
+        !forceReload) {
         last.params = next.params;
         if (!scope)
           copy(last.params, $routeParams);
@@ -605,6 +608,7 @@ function $RouteProvider(){
       // Match a route
       var routes = $route.scoped(scope).routes,
           params, match;
+
       forEach(routes, function(route, path) {
         if (!match && (params = matcher($location.path(), route))) {
           match = inherit(route, {

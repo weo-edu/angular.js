@@ -86,8 +86,6 @@ describe('$routeParams', function() {
       $rootScope.$digest();
       expect($routeParams).toEqual({0: '12'});
     });
-<<<<<<< HEAD
-=======
   });
 
   it('should correctly ignore params in ellipsees', function() {
@@ -99,10 +97,9 @@ describe('$routeParams', function() {
       $location.path('/bar/foovalue');
       $rootScope.$digest();
       expect($routeParams).toEqual({});
+      expect($route.current).toBeDefined()
 
     });
->>>>>>> express-style-route-matching
-
   });
 
 
