@@ -137,6 +137,7 @@ function $RouteProvider(){
 
     path = path
       .replace(/([\\\(\)\^\$])/g, "\\$1")
+      .replace(/\.\.\.$/g, opts.noEllipsis ? '': '(?:.*)')
       .concat(strict ? '' : '/?')
       .replace(/\/\(/g, '(?:/')
       .replace(/(\/)?(\.)?:(\w+)(?:(\(.*?\)))?(\?)?(\*)?/g, function(_, slash, format, key, capture, optional, star){
@@ -180,6 +181,24 @@ function $RouteProvider(){
    }
 
    this.otherwise = bind(this, otherwise, null);
+
+  /*
+   * @ngdoc method
+   * @name ng.$routeProvider#options
+   * @methodOf ng$routeProvider
+   *
+   * @description
+   * Options fore route matching.
+   *   - `sensitive` enable case-sensitive routes
+   *   - `strict` disable strict matching for trailing slashes
+   */
+  
+  this.options = function(opts) {
+    extend(options, opts);
+    return this;
+  }
+
+
 
   /*
    * @ngdoc method

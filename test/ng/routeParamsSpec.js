@@ -86,6 +86,22 @@ describe('$routeParams', function() {
       $rootScope.$digest();
       expect($routeParams).toEqual({0: '12'});
     });
+<<<<<<< HEAD
+=======
+  });
+
+  it('should correctly ignore params in ellipsees', function() {
+    module(function($routeProvider) {
+      $routeProvider.when('/bar/...', {});
+    });
+
+    inject(function($rootScope, $route, $location, $routeParams) {
+      $location.path('/bar/foovalue');
+      $rootScope.$digest();
+      expect($routeParams).toEqual({});
+
+    });
+>>>>>>> express-style-route-matching
 
   });
 
