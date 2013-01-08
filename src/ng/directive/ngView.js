@@ -115,6 +115,20 @@ var ngViewDirective = ['$http', '$templateCache', '$route', '$anchorScroll', '$c
       var lastScope,
           onloadExp = attr.onload || '';
 
+      if (scope.hasOwnProperty('$router')) {
+        var router = $route.scopedRouter(scope)
+        scope.$router(router);
+        router.updateRoute();
+      } else {
+        var parent = scope.$parent;
+        while (parent) {
+          if (parent.$$ngView)
+            throw new Error("Cannot nest root router ngViews.");
+          parent = parent.$parent;
+        }
+        scope.$$ngView = true;
+      }
+
       scope.$on('$routeChangeSuccess', update);
       update();
 
@@ -132,7 +146,8 @@ var ngViewDirective = ['$http', '$templateCache', '$route', '$anchorScroll', '$c
       }
 
       function update() {
-        var locals = $route.current && $route.current.locals,
+        var route = $route.scoped(scope),
+            locals = route.current && route.current.locals,
             template = locals && locals.$template;
 
         if (template) {
@@ -140,7 +155,7 @@ var ngViewDirective = ['$http', '$templateCache', '$route', '$anchorScroll', '$c
           destroyLastScope();
 
           var link = $compile(element.contents()),
-              current = $route.current,
+              current = route.current,
               controller;
 
           lastScope = current.scope = scope.$new();

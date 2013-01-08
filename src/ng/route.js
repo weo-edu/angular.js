@@ -11,7 +11,43 @@
  * Used for configuring routes. See {@link ng.$route $route} for an example.
  */
 function $RouteProvider(){
-  var routes = {};
+  var scopedRoutes = {},
+      options = {
+        strict: true
+      };
+
+    function scopeKey(scope) {
+      return scope && scope.$id || null;
+    }
+
+    function addScope(scope) {
+      var key = scopeKey(scope);
+      scopedRoutes[key] = {
+        routes: [],
+      };
+    }
+
+    function pushRoute(scope, route) {
+      var key = scopeKey(scope);
+      scopedRoutes[key].routes.push(route);
+    }
+
+    function removeScope(scope) {
+      var key = scopeKey(scope);
+      delete scopedRoutes[key];
+    }
+
+    function scoped(scope) {
+      var key = scopeKey(scope);
+      if (key in scopedRoutes)
+        return scopedRoutes[key];
+      else {
+        return scoped(scope.$parent);
+      }
+    }
+  
+    // the root routes have null scope
+    addScope(null);
 
   /**
    * @ngdoc method
@@ -71,20 +107,73 @@ function $RouteProvider(){
    * @description
    * Adds a new route definition to the `$route` service.
    */
-  this.when = function(path, route) {
-    routes[path] = extend({reloadOnSearch: true}, route);
+  var trailingRegex = /^.*(\.\.\.|\*)$/g;
+  function when(scope, path, route, opts) {
+
+    if (this.base && isString(path) && path[0] !== '/') {
+      path = this.base + path;
+    }
+
+    pushRoute(scope, extend(
+      {reloadOnSearch: true}, 
+      route,
+      path && pathRegExp(path, extend({}, options, opts))
+    ));
 
     // create redirection for trailing slashes
-    if (path) {
-      var redirectPath = (path[path.length-1] == '/')
+    if (path && !trailingRegex.exec(path)) {
+      var redirectPath = (path[path.length-1] === '/')
           ? path.substr(0, path.length-1)
           : path +'/';
 
-      routes[redirectPath] = {redirectTo: path};
+      pushRoute(scope, extend(
+        {redirectTo: path},
+        pathRegExp(redirectPath, extend({}, options, opts))
+      ));
     }
 
     return this;
-  };
+  }
+
+  this.when = bind(this, when, null);
+
+  //  http://github.com/visionmedia/express
+  function pathRegExp(path, opts) {
+    var sensitive = opts.sensitive,
+        strict = opts.strict,
+        ret = {
+          originalPath: path,
+          regexp: path
+        },
+        keys = ret.keys = [];
+
+    if (path instanceof RegExp) return ret;
+
+    path = path
+      .replace(/([\\\(\)\^\$])/g, "\\$1")
+      .concat(strict ? '' : '/?')
+      .replace(/\/\(/g, '(?:/')
+      .replace(/(\/)?(\.)?:(\w+)(?:(\(.*?\)))?(\?)?(\*)?/g, function(_, slash, format, key, capture, optional, star){
+        keys.push({ name: key, optional: !! optional });
+        slash = slash || '';
+        return ''
+          + (optional ? '' : slash)
+          + '(?:'
+          + (optional ? slash : '')
+          + (format || '') + (capture || (format && '([^/.]+?)' || '([^/]+?)')) + ')'
+          + (optional || '')
+          + (star ? '(/*)?' : '');
+      })
+      .replace(/([\/.])/g, '\\$1')
+      .replace(/\*/g, '(.*)')
+      .replace(/\\.\\.\\.$/g, function(a, b) {
+        ret.ellipsis = true;
+        return ''
+      });
+
+    ret.regexp = new RegExp('^' + path + (ret.ellipsis ? '' : '$'), sensitive ? '' : 'i');
+    return ret
+  }
 
   /**
    * @ngdoc method
@@ -98,10 +187,33 @@ function $RouteProvider(){
    * @param {Object} params Mapping information to be assigned to `$route.current`.
    * @returns {Object} self
    */
-  this.otherwise = function(params) {
-    this.when(null, params);
+   function otherwise(scope, params) {
+    var key = scopeKey(scope), 
+        routes = scopedRoutes[key].routes;
+
+    routes[null] = extend(
+      {reloadOnSearch: true}, 
+      params);
     return this;
-  };
+   }
+
+   this.otherwise = bind(this, otherwise, null);
+
+  /*
+   * @ngdoc method
+   * @name ng.$routeProvider#options
+   * @methodOf ng$routeProvider
+   *
+   * @description
+   * Options fore route matching.
+   *   - `sensitive` enable case-sensitive routes
+   *   - `strict` disable strict matching for trailing slashes
+   */
+  
+  this.options = function(opts) {
+    extend(options, opts);
+    return this;
+  }
 
 
   this.$get = ['$rootScope', '$location', '$routeParams', '$q', '$injector', '$http', '$templateCache',
@@ -289,7 +401,7 @@ function $RouteProvider(){
     var matcher = switchRouteMatcher,
         forceReload = false,
         $route = {
-          routes: routes,
+          routes: scopedRoutes[null].routes,
 
           /**
            * @ngdoc method
@@ -306,52 +418,128 @@ function $RouteProvider(){
           reload: function() {
             forceReload = true;
             $rootScope.$evalAsync(updateRoute);
-          }
+          },
+
+          /**
+           * @ngdoc method
+           * @name ng.$route#scopedRouter
+           * @methodOf ng.$route
+           *
+           * @description
+           * Creates a router on given scope, which controls routing for the
+           * given scope and it's children.
+           *
+           * @param {Scope} scope The scope to link the router with.
+           */
+
+          scopedRouter: function(scope) {
+            addScope(scope);
+
+            function updateRouteListener(evt) {
+              if (evt.targetScope.$id !== scope.$id) {
+                evt.stopDescent();
+                updateRoute(scope);
+              }
+            }
+
+            // route events will be emitted twice for any listeners that come
+            // before the ones added by scopeRouter, so don't allow them
+            forEach(['$routeUpdate', '$routeChangeStart', '$routeChangeSuccess', '$routeChangeError'], function(name) {
+              if (scope.$$listeners[name])
+                throw new Error('Scoped router must be first listener to route events');
+            });
+
+            scope.$on('$routeUpdate', updateRouteListener);
+            scope.$on('$routeChangeStart', function(evt) {
+              if (evt.targetScope.$id !== scope.$id)
+                evt.stopDescent();
+            });
+            scope.$on('$routeChangeSuccess', updateRouteListener);
+            scope.$on('$routeChangeError', updateRouteListener);
+            scope.$on('$destroy', function() {
+              removeScope(scope);
+            });
+
+            var ret = {};
+            ret.base = basePath(scope.$parent);
+            ret.when = bind(ret, when, scope);
+            ret.otherwise = bind(ret, otherwise, scope);
+            ret.updateRoute = bind(null, updateRoute, scope);
+            return ret;
+          },
+
+          scoped: scoped
         };
 
-    $rootScope.$on('$locationChangeSuccess', updateRoute);
+    $route.__defineGetter__('current', function() {
+      return scopedRoutes[null].current;
+    });
+
+    $rootScope.$on('$locationChangeSuccess', function() {
+      updateRoute();
+    });
 
     return $route;
 
     /////////////////////////////////////////////////////
-
-    function switchRouteMatcher(on, when) {
-      // TODO(i): this code is convoluted and inefficient, we should construct the route matching
-      //   regex only once and then reuse it
-      var regex = '^' + when.replace(/([\.\\\(\)\^\$])/g, "\\$1") + '$',
-          params = [],
-          dst = {};
-      forEach(when.split(/[^\w:]/), function(param) {
-        if (param && param.charAt(0) === ':') {
-          var paramRegExp = new RegExp(param + "([\\W])");
-          if (regex.match(paramRegExp)) {
-            regex = regex.replace(paramRegExp, "([^\\/]*)$1");
-            params.push(param.substr(1));
-          }
-        }
-      });
-      var match = on.match(new RegExp(regex));
-      if (match) {
-        forEach(params, function(name, index) {
-          dst[name] = match[index + 1];
-        });
-      }
-      return match ? dst : null;
+    
+    function basePath(scope) {
+      var current  = $route.scoped(scope).current;
+      if (!current) return;
+      return current.base;
     }
 
-    function updateRoute() {
-      var next = parseRoute(),
-          last = $route.current;
+    // http://github.com/visionmedia/express
+    function switchRouteMatcher(on, route) {
+      var keys = route.keys,
+          params = {};
 
-      if (next && last && next.$route === last.$route
-          && equals(next.pathParams, last.pathParams) && !next.reloadOnSearch && !forceReload) {
+      if (!route.regexp) return null;
+
+
+
+      var m = route.regexp.exec(on);
+      if (!m) return null;
+
+      if (route.ellipsis)
+        route.base = m[0];
+
+      var N = 0;
+      for (var i = 1, len = m.length; i < len; ++i) {
+        var key = keys[i - 1];
+
+        var val = 'string' == typeof m[i]
+          ? decodeURIComponent(m[i])
+          : m[i];
+
+        if (key) {
+          params[key.name] = val;
+        } else {
+          params[N++] = val;
+        }
+      }
+
+      return params;
+    }
+
+    function updateRoute(scope) {
+      var next = parseRoute(scope),
+          route = $route.scoped(scope),
+          last = route.current;
+
+      if (next && last && next.$route === last.$route && 
+        equals(next.pathParams, last.pathParams) && 
+        (!(!equals(next.params, last.params) && next.reloadOnSearch)) && 
+        !forceReload) {
         last.params = next.params;
-        copy(last.params, $routeParams);
-        $rootScope.$broadcast('$routeUpdate', last);
+        if (!scope)
+          copy(last.params, $routeParams);
+        (scope || $rootScope).$routeParams = last.params;
+        (scope || $rootScope).$broadcast('$routeUpdate', last);
       } else if (next || last) {
         forceReload = false;
-        $rootScope.$broadcast('$routeChangeStart', next, last);
-        $route.current = next;
+        (scope || $rootScope).$broadcast('$routeChangeStart', next, last);
+        route.current = next;
         if (next) {
           if (next.redirectTo) {
             if (isString(next.redirectTo)) {
@@ -395,16 +583,18 @@ function $RouteProvider(){
           }).
           // after route change
           then(function(locals) {
-            if (next == $route.current) {
+            if (next == route.current) {
               if (next) {
                 next.locals = locals;
-                copy(next.params, $routeParams);
+                if (!scope)
+                  copy(next.params, $routeParams);
+                (scope || $rootScope).$routeParams = next.params;
               }
-              $rootScope.$broadcast('$routeChangeSuccess', next, last);
+              (scope || $rootScope).$broadcast('$routeChangeSuccess', next, last);
             }
           }, function(error) {
-            if (next == $route.current) {
-              $rootScope.$broadcast('$routeChangeError', next, last, error);
+            if (next == route.current) {
+              (scope || $rootScope).$broadcast('$routeChangeError', next, last, error);
             }
           });
       }
@@ -414,19 +604,22 @@ function $RouteProvider(){
     /**
      * @returns the current active route, by matching it against the URL
      */
-    function parseRoute() {
+    function parseRoute(scope) {
       // Match a route
-      var params, match;
+      var routes = $route.scoped(scope).routes,
+          params, match;
+
       forEach(routes, function(route, path) {
-        if (!match && (params = matcher($location.path(), path))) {
+        if (!match && (params = matcher($location.path(), route))) {
           match = inherit(route, {
             params: extend({}, $location.search(), params),
             pathParams: params});
           match.$route = route;
         }
       });
+
       // No route matched; fallback to "otherwise" route
-      return match || routes[null] && inherit(routes[null], {params: {}, pathParams:{}});
+      return match ||  routes[null] && inherit(routes[null], {params: {}, pathParams:{}});;
     }
 
     /**

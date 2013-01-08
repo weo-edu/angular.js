@@ -733,5 +733,39 @@ describe('$route', function() {
         });
       });
     });
+
+    describe('nested route', function() {
+
+      it('should override parent route', function() {
+
+          module(function($routeProvider) {
+            $routeProvider.when('/foo/...');
+          });
+
+          inject(function($route, $location, $rootScope, $routeParams) {
+            $location.path('/foo/barvalue');
+            $rootScope.$digest();
+            expect($routeParams).toEqual({});
+
+            var childScope = $rootScope.$new();
+            var router = $route.scopedRouter(childScope);
+            router.when(':bar');
+            $route.reload();
+            $rootScope.$digest();
+            expect($routeParams).toEqual({});
+            expect($rootScope.$routeParams).toEqual({});
+            expect(childScope.$routeParams).toEqual({bar: 'barvalue'});
+
+            childScope.$destroy();
+            $route.reload();
+            $rootScope.$digest();
+            expect($routeParams).toEqual({});
+
+          });
+
+
+      });
+    });
   });
+
 });
