@@ -29,10 +29,9 @@ Pages: {{pages}}
 script.js
 ```javascript
 angular.module('ngView', [], function()($routeProvider) {
-  $routeProvider.when('/Book/:name/*', {
+  $routeProvider.when('/Book/:name/...', {
     templateUrl: 'book.html',
     controller: BookCntl,
-    reloadOnParams: 'name'
   }); 
 });
 
@@ -52,7 +51,7 @@ function BookCntl($scope) {
  $scope.chapters = books[$scope.bookName];
 
   $scope.$router = function(router) {
-    router.when('/Book/' + $scope.bookName + '/chapter/:name', {
+    router.when('chapter/:name', {
       templateUrl: 'chapter.html',
       controller: ChapterCntl,
     }); 
