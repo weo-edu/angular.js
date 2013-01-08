@@ -216,8 +216,8 @@ function $RouteProvider(){
   }
 
 
-  this.$get = ['$rootScope', '$location', '$routeParams', '$q', '$injector', '$http', '$templateCache',
-      function( $rootScope,   $location,   $routeParams,   $q,   $injector,   $http,   $templateCache) {
+  this.$get = ['$rootScope', '$location', '$routeParams', '$q', '$injector', '$http', '$templateCache', '$interpolate',
+      function( $rootScope,   $location,   $routeParams,   $q,   $injector,   $http,   $templateCache, $interpolate) {
 
     /**
      * @ngdoc object
@@ -543,7 +543,7 @@ function $RouteProvider(){
         if (next) {
           if (next.redirectTo) {
             if (isString(next.redirectTo)) {
-              $location.path(interpolate(next.redirectTo, next.params)).search(next.params)
+              $location.path(interpolate(next.redirectTo, next.params, scope)).search(next.params)
                        .replace();
             } else {
               $location.url(next.redirectTo(next.pathParams, $location.path(), $location.search()))
@@ -625,7 +625,11 @@ function $RouteProvider(){
     /**
      * @returns interpolation of the redirect path with the parametrs
      */
-    function interpolate(string, params) {
+    function interpolate(string, params, scope) {
+      if (scope) {
+        string = $interpolate(string)(scope);
+      }
+
       var result = [];
       forEach((string||'').split(':'), function(segment, i) {
         if (i == 0) {
