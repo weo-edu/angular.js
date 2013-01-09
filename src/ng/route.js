@@ -24,7 +24,10 @@ function $RouteProvider(){
       var key = scopeKey(scope);
       scopedRoutes[key] = {
         routes: [],
+        scope: scope
       };
+      if (!scopedRoutes[null])
+        scopedRoutes[null] = scopedRoutes[key];
     }
 
     function pushRoute(scope, route) {
@@ -34,7 +37,10 @@ function $RouteProvider(){
 
     function removeScope(scope) {
       var key = scopeKey(scope);
+      var router = scopedRoutes[key];
       delete scopedRoutes[key];
+      if (scopedRoutes[null] === router)
+        delete scopedRoutes[null];
     }
 
     function scoped(scope) {
@@ -45,9 +51,6 @@ function $RouteProvider(){
         return scoped(scope.$parent);
       }
     }
-  
-    // the root routes have null scope
-    addScope(null);
 
   /**
    * @ngdoc method
@@ -109,6 +112,8 @@ function $RouteProvider(){
    */
   var trailingRegex = /^.*(\.\.\.|\*)$/g;
   function when(scope, path, route, opts) {
+    if (scope === null && !scopedRoutes[null])
+      addScope(null);
 
     if (this.base && isString(path) && path[0] !== '/') {
       path = this.base + path;
@@ -525,6 +530,7 @@ function $RouteProvider(){
     function updateRoute(scope) {
       var next = parseRoute(scope),
           route = $route.scoped(scope),
+          scope = route.scope,
           last = route.current;
 
       if (next && last && next.$route === last.$route && 
