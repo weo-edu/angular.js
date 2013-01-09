@@ -739,31 +739,29 @@ describe('$route', function() {
       it('should override parent route', function() {
 
           module(function($routeProvider) {
-            $routeProvider.when('/foo/...');
+            $routeProvider.when('/foo/:name/...');
           });
 
           inject(function($route, $location, $rootScope, $routeParams) {
-            $location.path('/foo/barvalue');
+            $location.path('/foo/namevalue/barvalue');
             $rootScope.$digest();
-            expect($routeParams).toEqual({});
+            expect($routeParams).toEqual({name: 'namevalue'});
 
             var childScope = $rootScope.$new();
             var router = $route.scopedRouter(childScope);
             router.when(':bar');
             $route.reload();
             $rootScope.$digest();
-            expect($routeParams).toEqual({});
-            expect($rootScope.$routeParams).toEqual({});
-            expect(childScope.$routeParams).toEqual({bar: 'barvalue'});
+            expect($routeParams).toEqual({name: 'namevalue'});
+            expect($rootScope.$routeParams).toEqual({name: 'namevalue'});
+            expect(childScope.$routeParams).toEqual({name: 'namevalue', bar: 'barvalue'});
 
             childScope.$destroy();
             $route.reload();
             $rootScope.$digest();
-            expect($routeParams).toEqual({});
+            expect($routeParams).toEqual({name: 'namevalue'});
 
           });
-
-
       });
     });
   });
