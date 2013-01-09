@@ -475,7 +475,7 @@ function $RouteProvider(){
         };
 
     $route.__defineGetter__('current', function() {
-      return scopedRoutes[null].current;
+      return scopedRoutes[null] && scopedRoutes[null].current;
     });
 
     $route.__defineGetter__('routes', function() {
