@@ -406,8 +406,6 @@ function $RouteProvider(){
     var matcher = switchRouteMatcher,
         forceReload = false,
         $route = {
-          routes: scopedRoutes[null].routes,
-
           /**
            * @ngdoc method
            * @name ng.$route#reload
@@ -478,6 +476,10 @@ function $RouteProvider(){
 
     $route.__defineGetter__('current', function() {
       return scopedRoutes[null].current;
+    });
+
+    $route.__defineGetter__('routes', function() {
+      return scopedRoutes[null] && scopedRoutes[null].routes;
     });
 
     $rootScope.$on('$locationChangeSuccess', function() {
