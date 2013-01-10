@@ -577,7 +577,7 @@ function $RouteProvider(){
         scope.$broadcast('$routeUpdate', last);
       } else if (next || last) {
         forceReload = false;
-        (scope || $rootScope).$broadcast('$routeChangeStart', next, last);
+        scope.$broadcast('$routeChangeStart', next, last);
         route.current = next;
         if (next) {
           if (next.redirectTo) {
@@ -589,6 +589,7 @@ function $RouteProvider(){
                        .replace();
             }
           }
+          scope.$emit('$routeRedirect', next, last);
         }
 
         $q.when(next).
