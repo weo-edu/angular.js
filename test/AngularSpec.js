@@ -31,12 +31,21 @@ describe('angular', function() {
       expect(copy(date) === date).toBeFalsy();
     });
 
-    it("should copy array", function() {
+    it("should deeply copy an array into an existing array", function() {
       var src = [1, {name:"value"}];
       var dst = [{key:"v"}];
       expect(copy(src, dst)).toBe(dst);
       expect(dst).toEqual([1, {name:"value"}]);
       expect(dst[1]).toEqual({name:"value"});
+      expect(dst[1]).not.toBe(src[1]);
+    });
+
+    it("should deeply copy an array into a new array", function() {
+      var src = [1, {name:"value"}];
+      var dst = copy(src);
+      expect(src).toEqual([1, {name:"value"}]);
+      expect(dst).toEqual(src);
+      expect(dst).not.toBe(src);
       expect(dst[1]).not.toBe(src[1]);
     });
 
@@ -47,11 +56,21 @@ describe('angular', function() {
       expect(dst).toEqual([]);
     });
 
-    it("should copy object", function() {
+    it("should deeply copy an object into an existing object", function() {
       var src = {a:{name:"value"}};
       var dst = {b:{key:"v"}};
       expect(copy(src, dst)).toBe(dst);
       expect(dst).toEqual({a:{name:"value"}});
+      expect(dst.a).toEqual(src.a);
+      expect(dst.a).not.toBe(src.a);
+    });
+
+    it("should deeply copy an object into an existing object", function() {
+      var src = {a:{name:"value"}};
+      var dst = copy(src, dst);
+      expect(src).toEqual({a:{name:"value"}});
+      expect(dst).toEqual(src);
+      expect(dst).not.toBe(src);
       expect(dst.a).toEqual(src.a);
       expect(dst.a).not.toBe(src.a);
     });
@@ -124,6 +143,14 @@ describe('angular', function() {
       expect(equals(['misko'], ['misko'])).toEqual(true);
       expect(equals(['misko'], ['adam'])).toEqual(false);
       expect(equals(['misko'], ['misko', 'adam'])).toEqual(false);
+    });
+
+    it('should ignore undefined member variables during comparison', function() {
+      var obj1 = {name: 'misko'},
+          obj2 = {name: 'misko', undefinedvar: undefined};
+
+      expect(equals(obj1, obj2)).toBe(true);
+      expect(equals(obj2, obj1)).toBe(true);
     });
 
     it('should ignore $ member variables', function() {
@@ -249,7 +276,7 @@ describe('angular', function() {
       function MyObj() {
         this.bar = 'barVal';
         this.baz = 'bazVal';
-      };
+      }
       MyObj.prototype.foo = 'fooVal';
 
       var obj = new MyObj(),
@@ -258,6 +285,77 @@ describe('angular', function() {
       forEach(obj, function(value, key) { log.push(key + ':' + value)});
 
       expect(log).toEqual(['bar:barVal', 'baz:bazVal']);
+    });
+
+
+    it('should handle JQLite and jQuery objects like arrays', function() {
+      var jqObject = jqLite("<p><span>s1</span><span>s2</span></p>").find("span"),
+          log = [];
+
+      forEach(jqObject, function(value, key) { log.push(key + ':' + value.innerHTML)});
+      expect(log).toEqual(['0:s1', '1:s2']);
+    });
+
+
+    it('should handle NodeList objects like arrays', function() {
+      var nodeList = jqLite("<p><span>a</span><span>b</span><span>c</span></p>")[0].childNodes,
+          log = [];
+
+
+      forEach(nodeList, function(value, key) { log.push(key + ':' + value.innerHTML)});
+      expect(log).toEqual(['0:a', '1:b', '2:c']);
+    });
+
+
+    it('should handle HTMLCollection objects like arrays', function() {
+      document.body.innerHTML = "<p>" +
+                                  "<a name='x'>a</a>" +
+                                  "<a name='y'>b</a>" +
+                                  "<a name='x'>c</a>" +
+                                "</p>";
+
+      var htmlCollection = document.getElementsByName('x'),
+          log = [];
+
+      forEach(htmlCollection, function(value, key) { log.push(key + ':' + value.innerHTML)});
+      expect(log).toEqual(['0:a', '1:c']);
+    });
+
+
+    it('should handle arguments objects like arrays', function() {
+      var args,
+          log = [];
+
+      (function(){ args = arguments}('a', 'b', 'c'));
+
+      forEach(args, function(value, key) { log.push(key + ':' + value)});
+      expect(log).toEqual(['0:a', '1:b', '2:c']);
+    });
+
+
+    it('should handle objects with length property as objects', function() {
+      var obj = {
+            'foo' : 'bar',
+            'length': 2
+          },
+          log = [];
+
+      forEach(obj, function(value, key) { log.push(key + ':' + value)});
+      expect(log).toEqual(['foo:bar', 'length:2']);
+    });
+
+
+    it('should handle objects of custom types with length property as objects', function() {
+      function CustomType() {
+        this.length = 2;
+        this.foo = 'bar'
+      }
+
+      var obj = new CustomType(),
+          log = [];
+
+      forEach(obj, function(value, key) { log.push(key + ':' + value)});
+      expect(log).toEqual(['length:2', 'foo:bar']);
     });
   });
 
@@ -317,6 +415,14 @@ describe('angular', function() {
       //encode ' ' as '%20' when a flag is used
       expect(encodeUriQuery('  ', true)).
         toEqual('%20%20');
+
+      //do not encode `null` as '+' when flag is used
+      expect(encodeUriQuery('null', true)).
+        toEqual('null');
+
+      //do not encode `null` with no flag
+      expect(encodeUriQuery('null')).
+        toEqual('null');
     });
   });
 
@@ -552,7 +658,7 @@ describe('angular', function() {
       var element = jqLite('<div>{{1+2}}</div>');
       var injector = angular.bootstrap(element);
       expect(injector).toBeDefined();
-      expect(element.data('$injector')).toBe(injector);
+      expect(element.injector()).toBe(injector);
       dealoc(element);
     });
 
@@ -566,6 +672,78 @@ describe('angular', function() {
       expect(element.html()).toBe('{{1+2}}');
       dealoc(element);
     });
+
+
+    describe('deferred bootstrap', function() {
+      var originalName = window.name,
+          element;
+
+      beforeEach(function() {
+        window.name = '';
+        element = jqLite('<div>{{1+2}}</div>');
+      });
+
+      afterEach(function() {
+        dealoc(element);
+        window.name = originalName;
+      });
+
+
+      it('should wait for extra modules', function() {
+        window.name = 'NG_DEFER_BOOTSTRAP!';
+        angular.bootstrap(element);
+
+        expect(element.html()).toBe('{{1+2}}');
+
+        angular.resumeBootstrap();
+
+        expect(element.html()).toBe('3');
+        expect(window.name).toEqual('');
+      });
+
+
+      it('should load extra modules', function() {
+        element = jqLite('<div>{{1+2}}</div>');
+        window.name = 'NG_DEFER_BOOTSTRAP!';
+
+        var bootstrapping = jasmine.createSpy('bootstrapping');
+        angular.bootstrap(element, [bootstrapping]);
+
+        expect(bootstrapping).not.toHaveBeenCalled();
+        expect(element.injector()).toBeUndefined();
+
+        angular.module('addedModule', []).value('foo', 'bar');
+        angular.resumeBootstrap(['addedModule']);
+
+        expect(bootstrapping).toHaveBeenCalledOnce();
+        expect(element.injector().get('foo')).toEqual('bar');
+      });
+
+
+      it('should not defer bootstrap without window.name cue', function() {
+        angular.bootstrap(element, []);
+        angular.module('addedModule', []).value('foo', 'bar');
+
+        expect(function() {
+          element.injector().get('foo');
+        }).toThrow('Unknown provider: fooProvider <- foo');
+
+        expect(element.injector().get('$http')).toBeDefined();
+      });
+
+
+      it('should restore the original window.name after bootstrap', function() {
+        window.name = 'NG_DEFER_BOOTSTRAP!my custom name';
+        angular.bootstrap(element);
+
+        expect(element.html()).toBe('{{1+2}}');
+
+        angular.resumeBootstrap();
+
+        expect(element.html()).toBe('3');
+        expect(window.name).toEqual('my custom name');
+      });
+    });
   });
 
 
@@ -573,6 +751,13 @@ describe('angular', function() {
     it('should show starting element tag only', function(){
       expect(startingTag('<ng-abc x="2A"><div>text</div></ng-abc>')).
           toBe('<ng-abc x="2A">');
+    });
+  });
+
+  describe('startingTag', function() {
+    it('should allow passing in Nodes instead of Elements', function() {
+      var txtNode = document.createTextNode('some text');
+      expect(startingTag(txtNode)).toBe('some text');
     });
   });
 
@@ -632,4 +817,27 @@ describe('angular', function() {
       expect(toJson({key: $rootScope})).toEqual('{"key":"$SCOPE"}');
     }));
   });
+
+  describe('noConflict', function() {
+    var globalAngular;
+    beforeEach(function() {
+      globalAngular = angular;
+    });
+
+    afterEach(function() {
+      angular = globalAngular;
+    });
+
+    it('should return angular', function() {
+      var a = angular.noConflict();
+      expect(a).toBe(globalAngular);
+    });
+
+    it('should restore original angular', function() {
+      var a = angular.noConflict();
+      expect(angular).toBeUndefined();
+    });
+
+  });
+
 });

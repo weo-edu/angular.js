@@ -20,6 +20,8 @@ var OPERATORS = {
     '%':function(self, locals, a,b){return a(self, locals)%b(self, locals);},
     '^':function(self, locals, a,b){return a(self, locals)^b(self, locals);},
     '=':noop,
+    '===':function(self, locals, a, b){return a(self, locals)===b(self, locals);},
+    '!==':function(self, locals, a, b){return a(self, locals)!==b(self, locals);},
     '==':function(self, locals, a,b){return a(self, locals)==b(self, locals);},
     '!=':function(self, locals, a,b){return a(self, locals)!=b(self, locals);},
     '<':function(self, locals, a,b){return a(self, locals)<b(self, locals);},
@@ -70,9 +72,14 @@ function lex(text, csp){
       continue;
     } else {
       var ch2 = ch + peek(),
+          ch3 = ch2 + peek(2),
           fn = OPERATORS[ch],
-          fn2 = OPERATORS[ch2];
-      if (fn2) {
+          fn2 = OPERATORS[ch2],
+          fn3 = OPERATORS[ch3];
+      if (fn3) {
+        tokens.push({index:index, text:ch3, fn:fn3});
+        index += 3;
+      } else if (fn2) {
         tokens.push({index:index, text:ch2, fn:fn2});
         index += 2;
       } else if (fn) {
@@ -94,8 +101,9 @@ function lex(text, csp){
     return chars.indexOf(lastCh) != -1;
   }
 
-  function peek() {
-    return index + 1 < text.length ? text.charAt(index + 1) : false;
+  function peek(i) {
+    var num = i || 1;
+    return index + num < text.length ? text.charAt(index + num) : false;
   }
   function isNumber(ch) {
     return '0' <= ch && ch <= '9';
@@ -295,6 +303,8 @@ function parser(text, json, $filter, csp){
   if (tokens.length !== 0) {
     throwError("is an unexpected token", tokens[0]);
   }
+  value.literal = !!value.literal;
+  value.constant = !!value.constant;
   return value;
 
   ///////////////////////////////////
@@ -342,15 +352,19 @@ function parser(text, json, $filter, csp){
   }
 
   function unaryFn(fn, right) {
-    return function(self, locals) {
+    return extend(function(self, locals) {
       return fn(self, locals, right);
-    };
+    }, {
+      constant:right.constant
+    });
   }
 
   function binaryFn(left, fn, right) {
-    return function(self, locals) {
+    return extend(function(self, locals) {
       return fn(self, locals, left, right);
-    };
+    }, {
+      constant:left.constant && right.constant
+    });
   }
 
   function statements() {
@@ -456,7 +470,7 @@ function parser(text, json, $filter, csp){
   function equality() {
     var left = relational();
     var token;
-    if ((token = expect('==','!='))) {
+    if ((token = expect('==','!=','===','!=='))) {
       left = binaryFn(left, token.fn, equality());
     }
     return left;
@@ -517,6 +531,9 @@ function parser(text, json, $filter, csp){
       primary = token.fn;
       if (!primary) {
         throwError("not a primary expression", token);
+      }
+      if (token.json) {
+        primary.constant = primary.literal = true;
       }
     }
 
@@ -606,23 +623,32 @@ function parser(text, json, $filter, csp){
   // This is used with json array declaration
   function arrayDeclaration () {
     var elementFns = [];
+    var allConstant = true;
     if (peekToken().text != ']') {
       do {
-        elementFns.push(expression());
+        var elementFn = expression();
+        elementFns.push(elementFn);
+        if (!elementFn.constant) {
+          allConstant = false;
+        }
       } while (expect(','));
     }
     consume(']');
-    return function(self, locals){
+    return extend(function(self, locals){
       var array = [];
       for ( var i = 0; i < elementFns.length; i++) {
         array.push(elementFns[i](self, locals));
       }
       return array;
-    };
+    }, {
+      literal:true,
+      constant:allConstant
+    });
   }
 
   function object () {
     var keyValues = [];
+    var allConstant = true;
     if (peekToken().text != '}') {
       do {
         var token = expect(),
@@ -630,10 +656,13 @@ function parser(text, json, $filter, csp){
         consume(":");
         var value = expression();
         keyValues.push({key:key, value:value});
+        if (!value.constant) {
+          allConstant = false;
+        }
       } while (expect(','));
     }
     consume('}');
-    return function(self, locals){
+    return extend(function(self, locals){
       var object = {};
       for ( var i = 0; i < keyValues.length; i++) {
         var keyValue = keyValues[i];
@@ -641,7 +670,10 @@ function parser(text, json, $filter, csp){
         object[keyValue.key] = value;
       }
       return object;
-    };
+    }, {
+      literal:true,
+      constant:allConstant
+    });
   }
 }
 
@@ -665,11 +697,11 @@ function setter(obj, path, setValue) {
 }
 
 /**
- * Return the value accesible from the object by path. Any undefined traversals are ignored
+ * Return the value accessible from the object by path. Any undefined traversals are ignored
  * @param {Object} obj starting object
  * @param {string} path path to traverse
  * @param {boolean=true} bindFnToScope
- * @returns value as accesbile by path
+ * @returns value as accessible by path
  */
 //TODO(misko): this function needs to be removed
 function getter(obj, path, bindFnToScope) {
@@ -840,12 +872,18 @@ function getterFn(path, csp) {
  * @param {string} expression String expression to compile.
  * @returns {function(context, locals)} a function which represents the compiled expression:
  *
- *    * `context`: an object against which any expressions embedded in the strings are evaluated
- *      against (Topically a scope object).
- *    * `locals`: local variables context object, useful for overriding values in `context`.
+ *    * `context` – `{object}` – an object against which any expressions embedded in the strings
+ *      are evaluated against (typically a scope object).
+ *    * `locals` – `{object=}` – local variables context object, useful for overriding values in
+ *      `context`.
  *
- *    The return function also has an `assign` property, if the expression is assignable, which
- *    allows one to set values to expressions.
+ *    The returned function also has the following properties:
+ *      * `literal` – `{boolean}` – whether the expression's top-level node is a JavaScript
+ *        literal.
+ *      * `constant` – `{boolean}` – whether the expression is made entirely of JavaScript
+ *        constant literals.
+ *      * `assign` – `{?function(context, value)}` – if the expression is assignable, this will be
+ *        set to a function to change its value on the given context.
  *
  */
 function $ParseProvider() {

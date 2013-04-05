@@ -9,6 +9,8 @@ angularFiles = {
     'src/auto/injector.js',
 
     'src/ng/anchorScroll.js',
+    'src/ng/animation.js',
+    'src/ng/animator.js',
     'src/ng/browser.js',
     'src/ng/cacheFactory.js',
     'src/ng/compile.js',
@@ -69,7 +71,8 @@ angularFiles = {
     'src/ngSanitize/directive/ngBindHtml.js',
     'src/ngSanitize/filter/linky.js',
     'src/ngMock/angular-mocks.js',
-
+    'src/ngMobile/mobile.js',
+    'src/ngMobile/directive/ngClick.js',
     'src/bootstrap/bootstrap.js'
   ],
 
@@ -79,7 +82,6 @@ angularFiles = {
     'src/ngScenario/Describe.js',
     'src/ngScenario/Future.js',
     'src/ngScenario/ObjectModel.js',
-    'src/ngScenario/Describe.js',
     'src/ngScenario/Runner.js',
     'src/ngScenario/SpecRunner.js',
     'src/ngScenario/dsl.js',
@@ -107,7 +109,8 @@ angularFiles = {
     'test/ngSanitize/*.js',
     'test/ngSanitize/directive/*.js',
     'test/ngSanitize/filter/*.js',
-    'test/ngMock/*.js'
+    'test/ngMock/*.js',
+    'test/ngMobile/directive/*.js'
   ],
 
   'jstd': [
@@ -142,9 +145,12 @@ angularFiles = {
     'lib/jasmine/jasmine.js',
     'lib/jasmine-jstd-adapter/JasmineAdapter.js',
     'build/angular.js',
+    'build/angular-scenario.js',
     'src/ngMock/angular-mocks.js',
     'src/ngCookies/cookies.js',
     'src/ngResource/resource.js',
+    'src/ngMobile/mobile.js',
+    'src/ngMobile/directive/ngClick.js',
     'src/ngSanitize/sanitize.js',
     'src/ngSanitize/directive/ngBindHtml.js',
     'src/ngSanitize/filter/linky.js',
@@ -154,7 +160,8 @@ angularFiles = {
     'test/ngResource/*.js',
     'test/ngSanitize/*.js',
     'test/ngSanitize/directive/*.js',
-    'test/ngSanitize/filter/*.js'
+    'test/ngSanitize/filter/*.js',
+    'test/ngMobile/directive/*.js'
   ],
 
   'jstdPerf': [
@@ -202,7 +209,7 @@ if (exports) {
     var files = [];
 
     [].splice.call(arguments, 0).forEach(function(file) {
-      if (file.match(/testacular/)) {
+      if (file.match(/karma/)) {
         files.push(file);
       } else {
         angularFiles[file].forEach(function(f) {

@@ -59,7 +59,7 @@
  * - [val()](http://api.jquery.com/val/)
  * - [wrap()](http://api.jquery.com/wrap/)
  *
- * ## In addtion to the above, Angular privides an additional method to both jQuery and jQuery lite:
+ * ## In addition to the above, Angular provides additional methods to both jQuery and jQuery lite:
  *
  * - `controller(name)` - retrieves the controller of the current element or its parent. By default
  *   retrieves controller associated with the `ngController` directive. If `name` is provided as
@@ -327,9 +327,14 @@ var JQLitePrototype = JQLite.prototype = {
       fn();
     }
 
-    this.bind('DOMContentLoaded', trigger); // works for modern browsers and IE9
-    // we can not use jqLite since we are not done loading and jQuery could be loaded later.
-    JQLite(window).bind('load', trigger); // fallback to window.onload for others
+    // check if document already is loaded
+    if (document.readyState === 'complete'){
+      setTimeout(trigger);
+    } else {
+      this.bind('DOMContentLoaded', trigger); // works for modern browsers and IE9
+      // we can not use jqLite since we are not done loading and jQuery could be loaded later.
+      JQLite(window).bind('load', trigger); // fallback to window.onload for others
+    }
   },
   toString: function() {
     var value = [];
@@ -353,11 +358,11 @@ var JQLitePrototype = JQLite.prototype = {
 // value on get.
 //////////////////////////////////////////
 var BOOLEAN_ATTR = {};
-forEach('multiple,selected,checked,disabled,readOnly,required'.split(','), function(value) {
+forEach('multiple,selected,checked,disabled,readOnly,required,open'.split(','), function(value) {
   BOOLEAN_ATTR[lowercase(value)] = value;
 });
 var BOOLEAN_ELEMENTS = {};
-forEach('input,select,option,textarea,button,form'.split(','), function(value) {
+forEach('input,select,option,textarea,button,form,details'.split(','), function(value) {
   BOOLEAN_ELEMENTS[uppercase(value)] = true;
 });
 
@@ -647,14 +652,14 @@ forEach({
   children: function(element) {
     var children = [];
     forEach(element.childNodes, function(element){
-      if (element.nodeName != '#text')
+      if (element.nodeType === 1)
         children.push(element);
     });
     return children;
   },
 
   contents: function(element) {
-    return element.childNodes;
+    return element.childNodes || [];
   },
 
   append: function(element, node) {
@@ -718,7 +723,16 @@ forEach({
   },
 
   next: function(element) {
-    return element.nextSibling;
+    if (element.nextElementSibling) {
+      return element.nextElementSibling;
+    }
+
+    // IE8 doesn't have nextElementSibling
+    var elm = element.nextSibling;
+    while (elm != null && elm.nodeType !== 1) {
+      elm = elm.nextSibling;
+    }
+    return elm;
   },
 
   find: function(element, selector) {

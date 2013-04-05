@@ -269,7 +269,7 @@ describe("angular.scenario.dsl", function() {
         $root.dsl.select('test').options('A', 'B');
         expect($root.futureError).toMatch(/did not match/);
       });
-      
+
       it('should fail to select an option that does not exist', function(){
           doc.append(
               '<select ng-model="test">' +
@@ -345,6 +345,26 @@ describe("angular.scenario.dsl", function() {
         $root.dsl.element('a').dblclick();
         expect($window.location).toBe(initLocation);
         dealoc(elm);
+      });
+
+      it('should execute mouseover', function() {
+        var mousedOver;
+        doc.append('<div></div>');
+        doc.find('div').mouseover(function() {
+          mousedOver = true;
+        });
+        $root.dsl.element('div').mouseover();
+        expect(mousedOver).toBe(true);
+      });
+
+      it('should bubble up the mouseover event', function() {
+        var mousedOver;
+        doc.append('<div id="outer"><div id="inner"></div></div>');
+        doc.find('#outer').mouseover(function() {
+          mousedOver = true;
+        });
+        $root.dsl.element('#inner').mouseover();
+        expect(mousedOver).toBe(true);
       });
 
       it('should count matching elements', function() {
@@ -596,12 +616,22 @@ describe("angular.scenario.dsl", function() {
     });
 
     describe('Input', function() {
-      it('should change value in text input', function() {
-        doc.append('<input ng-model="test.input" value="something">');
-        var chain = $root.dsl.input('test.input');
-        chain.enter('foo');
-        expect(_jQuery('input[ng-model="test.input"]').val()).toEqual('foo');
-      });
+      it('should change value in text input', inject(function($compile) {
+        runs(function() {
+          element = $compile('<input ng-model="test.input" value="something">')($root);
+          doc.append(element);
+          var chain = $root.dsl.input('test.input');
+          chain.enter('foo');
+          expect(_jQuery('input[ng-model="test.input"]').val()).toEqual('foo');
+        });
+
+        // cleanup the event queue
+        waits(0);
+
+        runs(function() {
+          expect($root.test.input).toBe('foo');
+        });
+      }));
 
       it('should change value in text input in dash form', function() {
         doc.append('<input ng-model="test.input" value="something">');

@@ -1,6 +1,6 @@
 'use strict';
 
-var URL_MATCH = /^([^:]+):\/\/(\w+:{0,1}\w*@)?([\w\.-]*)(:([0-9]+))?(\/[^\?#]*)?(\?([^#]*))?(#(.*))?$/,
+var URL_MATCH = /^([^:]+):\/\/(\w+:{0,1}\w*@)?(\{?[\w\.-]*\}?)(:([0-9]+))?(\/[^\?#]*)?(\?([^#]*))?(#(.*))?$/,
     PATH_MATCH = /^([^\?#]*)?(\?([^#]*))?(#(.*))?$/,
     HASH_MATCH = PATH_MATCH,
     DEFAULT_PORTS = {'http': 80, 'https': 443, 'ftp': 21};
@@ -79,7 +79,8 @@ function convertToHashbangUrl(url, basePath, hashPrefix) {
   var match = matchUrl(url);
 
   // already hashbang url
-  if (decodeURIComponent(match.path) == basePath) {
+  if (decodeURIComponent(match.path) == basePath && !isUndefined(match.hash) &&
+      match.hash.indexOf(hashPrefix) === 0) {
     return url;
   // convert html5 url -> hashbang url
   } else {

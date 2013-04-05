@@ -1,4 +1,3 @@
-
 describe('jqLite', function() {
   var scope, a, b, c;
 
@@ -925,8 +924,8 @@ describe('jqLite', function() {
 
 
   describe('children', function() {
-    it('should select non-text children', function() {
-      var root = jqLite('<div>').html('before-<div></div>after-<span></span>');
+    it('should only select element nodes', function() {
+      var root = jqLite('<div><!-- some comment -->before-<div></div>after-<span></span>');
       var div = root.find('div');
       var span = root.find('span');
       expect(root.children()).toJqEqual([div, span]);
@@ -935,11 +934,12 @@ describe('jqLite', function() {
 
 
   describe('contents', function() {
-    it('should select all children nodes', function() {
-      var root = jqLite('<div>').html('before-<div></div>after-<span></span>');
+    it('should select all types child nodes', function() {
+      var root = jqLite('<div><!-- some comment -->before-<div></div>after-<span></span></div>');
       var contents = root.contents();
-      expect(contents.length).toEqual(4);
-      expect(jqLite(contents[0]).text()).toEqual('before-');
+      expect(contents.length).toEqual(5);
+      expect(contents[0].data).toEqual(' some comment ');
+      expect(contents[1].data).toEqual('before-');
     });
   });
 
@@ -1069,6 +1069,14 @@ describe('jqLite', function() {
   describe('next', function() {
     it('should return next sibling', function() {
       var element = jqLite('<div><b>b</b><i>i</i></div>');
+      var b = element.find('b');
+      var i = element.find('i');
+      expect(b.next()).toJqEqual([i]);
+    });
+
+
+    it('should ignore non-element siblings', function() {
+      var element = jqLite('<div><b>b</b>TextNode<!-- comment node --><i>i</i></div>');
       var b = element.find('b');
       var i = element.find('i');
       expect(b.next()).toJqEqual([i]);

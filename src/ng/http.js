@@ -149,23 +149,58 @@ function $HttpProvider() {
       },
       post: {'Content-Type': 'application/json;charset=utf-8'},
       put:  {'Content-Type': 'application/json;charset=utf-8'}
-    }
+    },
+
+    xsrfCookieName: 'XSRF-TOKEN',
+    xsrfHeaderName: 'X-XSRF-TOKEN'
   };
 
-  var providerResponseInterceptors = this.responseInterceptors = [];
+  /**
+   * Are order by request. I.E. they are applied in the same order as
+   * array on request, but revers order on response.
+   */
+  var interceptorFactories = this.interceptors = [];
+  /**
+   * For historical reasons, response interceptors ordered by the order in which
+   * they are applied to response. (This is in revers to interceptorFactories)
+   */
+  var responseInterceptorFactories = this.responseInterceptors = [];
 
   this.$get = ['$httpBackend', '$browser', '$cacheFactory', '$rootScope', '$q', '$injector',
       function($httpBackend, $browser, $cacheFactory, $rootScope, $q, $injector) {
 
-    var defaultCache = $cacheFactory('$http'),
-        responseInterceptors = [];
+    var defaultCache = $cacheFactory('$http');
 
-    forEach(providerResponseInterceptors, function(interceptor) {
-      responseInterceptors.push(
-          isString(interceptor)
-              ? $injector.get(interceptor)
-              : $injector.invoke(interceptor)
-      );
+    /**
+     * Interceptors stored in reverse order. Inner interceptors before outer interceptors.
+     * The reversal is needed so that we can build up the interception chain around the
+     * server request.
+     */
+    var reversedInterceptors = [];
+
+    forEach(interceptorFactories, function(interceptorFactory) {
+      reversedInterceptors.unshift(isString(interceptorFactory)
+          ? $injector.get(interceptorFactory) : $injector.invoke(interceptorFactory));
+    });
+
+    forEach(responseInterceptorFactories, function(interceptorFactory, index) {
+      var responseFn = isString(interceptorFactory)
+          ? $injector.get(interceptorFactory)
+          : $injector.invoke(interceptorFactory);
+
+      /**
+       * Response interceptors go before "around" interceptors (no real reason, just
+       * had to pick one.) But they are already revesed, so we can't use unshift, hence
+       * the splice.
+       */
+      reversedInterceptors.splice(index, 0, {
+        response: function(response) {
+          return responseFn($q.when(response));
+        },
+        responseError: function(response) {
+          return responseFn($q.reject(response));
+        }
+      });
     });
 
 
@@ -208,8 +243,7 @@ function $HttpProvider() {
      *     }).
      *     error(function(data, status, headers, config) {
      *       // called asynchronously if an error occurs
-     *       // or server returns response with status
-     *       // code outside of the <200, 400) range
+     *       // or server returns response with an error status.
      *     });
      * </pre>
      *
@@ -218,6 +252,10 @@ function $HttpProvider() {
      * an object representing the response. See the api signature and type info below for more
      * details.
      *
+     * A response status code that falls in the [200, 300) range is considered a success status and
+     * will result in the success callback being called. Note that if the response is a redirect,
+     * XMLHttpRequest will transparently follow it, meaning that the error callback will not be
+     * called for such responses.
      *
      * # Shortcut methods
      *
@@ -259,7 +297,7 @@ function $HttpProvider() {
      * `$httpProvider.defaults.headers.get['My-Header']='value'`.
      *
      * Additionally, the defaults can be set at runtime via the `$http.defaults` object in a similar
-     * fassion as described above.
+     * fashion as described above.
      *
      *
      * # Transforming Requests and Responses
@@ -277,10 +315,14 @@ function $HttpProvider() {
      *  - if XSRF prefix is detected, strip it (see Security Considerations section below)
      *  - if json response is detected, deserialize it using a JSON parser
      *
-     * To override these transformation locally, specify transform functions as `transformRequest`
-     * and/or `transformResponse` properties of the config object. To globally override the default
-     * transforms, override the `$httpProvider.defaults.transformRequest` and
-     * `$httpProvider.defaults.transformResponse` properties of the `$httpProvider`.
+     * To globally augment or override the default transforms, modify the `$httpProvider.defaults.transformRequest` and
+     * `$httpProvider.defaults.transformResponse` properties of the `$httpProvider`. These properties are by default an
+     * array of transform functions, which allows you to `push` or `unshift` a new transformation function into the
+     * transformation chain. You can also decide to completely override any default transformations by assigning your
+     * transformation functions to these properties directly without the array wrapper.
+     *
+     * Similarly, to locally override the request/response transforms, augment the `transformRequest` and/or
+     * `transformResponse` properties of the config object passed into `$http`.
      *
      *
      * # Caching
@@ -296,8 +338,94 @@ function $HttpProvider() {
      * cache, but the cache is not populated yet, only one request to the server will be made and
      * the remaining requests will be fulfilled using the response for the first request.
      *
+     * A custom default cache built with $cacheFactory can be provided in $http.defaults.cache.
+     * To skip it, set configuration property `cache` to `false`.
+     * 
      *
-     * # Response interceptors
+     * # Interceptors
+     *
+     * Before you start creating interceptors, be sure to understand the
+     * {@link ng.$q $q and deferred/promise APIs}.
+     *
+     * For purposes of global error handling, authentication or any kind of synchronous or
+     * asynchronous pre-processing of request or postprocessing of responses, it is desirable to be
+     * able to intercept requests before they are handed to the server and
+     * responses  before they are handed over to the application code that
+     * initiated these requests. The interceptors leverage the {@link ng.$q
+     * promise APIs} to fulfil this need for both synchronous and asynchronous pre-processing.
+     *
+     * The interceptors are service factories that are registered with the $httpProvider by
+     * adding them to the `$httpProvider.interceptors` array. The factory is called and
+     * injected with dependencies (if specified) and returns the interceptor.
+     *
+     * There are two kinds of interceptors (and two kinds of rejection interceptors):
+     *
+     *   * `request`: interceptors get called with http `config` object. The function is free to modify
+     *     the `config` or create a new one. The function needs to return the `config` directly or as a
+     *     promise.
+     *   * `requestError`: interceptor gets called when a previous interceptor threw an error or resolved
+     *      with a rejection.
+     *   * `response`: interceptors get called with http `response` object. The function is free to modify
+     *     the `response` or create a new one. The function needs to return the `response` directly or as a
+     *     promise.
+     *   * `responseError`: interceptor gets called when a previous interceptor threw an error or resolved
+     *      with a rejection.
+     *
+     *
+     * <pre>
+     *   // register the interceptor as a service
+     *   $provide.factory('myHttpInterceptor', function($q, dependency1, dependency2) {
+     *     return {
+     *       // optional method
+     *       'request': function(config) {
+     *         // do something on success
+     *         return config || $q.when(config);
+     *       },
+     *
+     *       // optional method
+     *      'requestError': function(rejection) {
+     *         // do something on error
+     *         if (canRecover(rejection)) {
+     *           return responseOrNewPromise
+     *         }
+     *         return $q.reject(rejection);
+     *       },
+     *
+     *
+     *
+     *       // optional method
+     *       'response': function(response) {
+     *         // do something on success
+     *         return response || $q.when(response);
+     *       },
+     *
+     *       // optional method
+     *      'responseError': function(rejection) {
+     *         // do something on error
+     *         if (canRecover(rejection)) {
+     *           return responseOrNewPromise
+     *         }
+     *         return $q.reject(rejection);
+     *       };
+     *     }
+     *   });
+     *
+     *   $httpProvider.interceptors.push('myHttpInterceptor');
+     *
+     *
+     *   // register the interceptor via an anonymous factory
+     *   $httpProvider.interceptors.push(function($q, dependency1, dependency2) {
+     *     return {
+     *      'request': function(config) {
+     *          // same as above
+     *       },
+     *       'response': function(response) {
+     *          // same as above
+     *       }
+     *   });
+     * </pre>
+     *
+     * # Response interceptors (DEPRECATED)
      *
      * Before you start creating interceptors, be sure to understand the
      * {@link ng.$q $q and deferred/promise APIs}.
@@ -380,9 +508,10 @@ function $HttpProvider() {
      * {@link http://en.wikipedia.org/wiki/Cross-site_request_forgery XSRF} is a technique by which
      * an unauthorized site can gain your user's private data. Angular provides following mechanism
      * to counter XSRF. When performing XHR requests, the $http service reads a token from a cookie
-     * called `XSRF-TOKEN` and sets it as the HTTP header `X-XSRF-TOKEN`. Since only JavaScript that
-     * runs on your domain could read the cookie, your server can be assured that the XHR came from
-     * JavaScript running on your domain. The header will not be set for cross-domain requests.
+     * (by default, `XSRF-TOKEN`) and sets it as an HTTP header (`X-XSRF-TOKEN`). Since only
+     * JavaScript that runs on your domain could read the cookie, your server can be assured that
+     * the XHR came from JavaScript running on your domain. The header will not be set for
+     * cross-domain requests.
      *
      * To take advantage of this, your server needs to set a token in a JavaScript readable session
      * cookie called `XSRF-TOKEN` on first HTTP GET request. On subsequent non-GET requests the
@@ -391,6 +520,9 @@ function $HttpProvider() {
      * unique for each user and must be verifiable by the server (to prevent the JavaScript making
      * up its own tokens). We recommend that the token is a digest of your site's authentication
      * cookie with {@link http://en.wikipedia.org/wiki/Rainbow_table salt for added security}.
+     *
+     * The name of the headers can be specified using the xsrfHeaderName and xsrfCookieName
+     * properties of either $httpProvider.defaults, or the per-request config object.
      *
      *
      * @param {object} config Object describing the request to be made and how it should be
@@ -402,6 +534,8 @@ function $HttpProvider() {
      *      `?key1=value1&key2=value2` after the url. If the value is not a string, it will be JSONified.
      *    - **data** – `{string|Object}` – Data to be sent as the request message data.
      *    - **headers** – `{Object}` – Map of strings representing HTTP headers to send to the server.
+     *    - **xsrfHeaderName** – `{string}` – Name of HTTP header to populate with the XSRF token.
+     *    - **xsrfCookieName** – `{string}` – Name of cookie containing the XSRF token.
      *    - **transformRequest** – `{function(data, headersGetter)|Array.<function(data, headersGetter)>}` –
      *      transform function or an array of such functions. The transform function takes the http
      *      request body and headers and returns its transformed (typically serialized) version.
@@ -507,39 +641,65 @@ function $HttpProvider() {
         </file>
       </example>
      */
-    function $http(config) {
+    function $http(requestConfig) {
+      var config = {
+        transformRequest: defaults.transformRequest,
+        transformResponse: defaults.transformResponse
+      };
+      var headers = {};
+
+      extend(config, requestConfig);
+      config.headers = headers;
       config.method = uppercase(config.method);
 
-      var reqTransformFn = config.transformRequest || defaults.transformRequest,
-          respTransformFn = config.transformResponse || defaults.transformResponse,
-          defHeaders = defaults.headers,
-          xsrfToken = isSameDomain(config.url, $browser.url()) ?
-                          $browser.cookies()['XSRF-TOKEN'] : undefined,
-          reqHeaders = extend({'X-XSRF-TOKEN': xsrfToken},
-              defHeaders.common, defHeaders[lowercase(config.method)], config.headers),
-          reqData = transformData(config.data, headersGetter(reqHeaders), reqTransformFn),
-          promise;
+      extend(headers,
+          defaults.headers.common,
+          defaults.headers[lowercase(config.method)],
+          requestConfig.headers);
 
-      // strip content-type if data is undefined
-      if (isUndefined(config.data)) {
-        delete reqHeaders['Content-Type'];
+      var xsrfValue = isSameDomain(config.url, $browser.url())
+          ? $browser.cookies()[config.xsrfCookieName || defaults.xsrfCookieName]
+          : undefined;
+      if (xsrfValue) {
+        headers[(config.xsrfHeaderName || defaults.xsrfHeaderName)] = xsrfValue;
       }
 
-      if (isUndefined(config.withCredentials) && !isUndefined(defaults.withCredentials)) {
-        config.withCredentials = defaults.withCredentials;
-      }
 
-      // send request
-      promise = sendReq(config, reqData, reqHeaders);
+      var serverRequest = function(config) {
+        var reqData = transformData(config.data, headersGetter(headers), config.transformRequest);
 
+        // strip content-type if data is undefined
+        if (isUndefined(config.data)) {
+          delete headers['Content-Type'];
+        }
 
-      // transform future response
-      promise = promise.then(transformResponse, transformResponse);
+        if (isUndefined(config.withCredentials) && !isUndefined(defaults.withCredentials)) {
+          config.withCredentials = defaults.withCredentials;
+        }
+
+        // send request
+        return sendReq(config, reqData, headers).then(transformResponse, transformResponse);
+      };
+
+      var chain = [serverRequest, undefined];
+      var promise = $q.when(config);
 
       // apply interceptors
-      forEach(responseInterceptors, function(interceptor) {
-        promise = interceptor(promise);
+      forEach(reversedInterceptors, function(interceptor) {
+        if (interceptor.request || interceptor.requestError) {
+          chain.unshift(interceptor.request, interceptor.requestError);
+        }
+        if (interceptor.response || interceptor.responseError) {
+          chain.push(interceptor.response, interceptor.responseError);
+        }
       });
+
+      while(chain.length) {
+        var thenFn = chain.shift();
+        var rejectFn = chain.shift();
+
+        promise = promise.then(thenFn, rejectFn);
+      };
 
       promise.success = function(fn) {
         promise.then(function(response) {
@@ -560,7 +720,7 @@ function $HttpProvider() {
       function transformResponse(response) {
         // make a copy since the response must be cacheable
         var resp = extend({}, response, {
-          data: transformData(response.data, response.headers, respTransformFn)
+          data: transformData(response.data, response.headers, config.transformResponse)
         });
         return (isSuccess(response.status))
           ? resp
@@ -712,8 +872,10 @@ function $HttpProvider() {
       promise.then(removePendingReq, removePendingReq);
 
 
-      if (config.cache && config.method == 'GET') {
-        cache = isObject(config.cache) ? config.cache : defaultCache;
+      if ((config.cache || defaults.cache) && config.cache !== false && config.method == 'GET') {
+        cache = isObject(config.cache) ? config.cache 
+              : isObject(defaults.cache) ? defaults.cache 
+              : defaultCache;
       }
 
       if (cache) {
@@ -801,8 +963,8 @@ function $HttpProvider() {
               if (isObject(v)) {
                 v = toJson(v);
               }
-              parts.push(encodeURIComponent(key) + '=' +
-                         encodeURIComponent(v));
+              parts.push(encodeUriQuery(key) + '=' +
+                         encodeUriQuery(v));
             });
           });
           return url + ((url.indexOf('?') == -1) ? '?' : '&') + parts.join('&');

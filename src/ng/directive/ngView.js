@@ -12,9 +12,16 @@
  * Every time the current route changes, the included view changes with it according to the
  * configuration of the `$route` service.
  *
+ * Additionally, you can also provide animations via the ngAnimate attribute to animate the **enter**
+ * and **leave** effects.
+ *
+ * @animations
+ * enter - happens just after the ngView contents are changed (when the new view DOM element is inserted into the DOM)
+ * leave - happens just after the current ngView contents change and just before the former contents are removed from the DOM
+ *
  * @scope
  * @example
-    <example module="ngView">
+    <example module="ngView" animations="true">
       <file name="index.html">
         <div ng-controller="MainCntl">
           Choose:
@@ -24,7 +31,10 @@
           <a href="Book/Gatsby/ch/4?key=value">Gatsby: Ch4</a> |
           <a href="Book/Scarlet">Scarlet Letter</a><br/>
 
-          <div ng-view></div>
+          <div
+            ng-view
+            class="example-animate-container"
+            ng-animate="{enter: 'example-enter', leave: 'example-leave'}"></div>
           <hr />
 
           <pre>$location.path() = {{$location.path()}}</pre>
@@ -36,14 +46,58 @@
       </file>
 
       <file name="book.html">
-        controller: {{name}}<br />
-        Book Id: {{params.bookId}}<br />
+        <div>
+          controller: {{name}}<br />
+          Book Id: {{params.bookId}}<br />
+        </div>
       </file>
 
       <file name="chapter.html">
-        controller: {{name}}<br />
-        Book Id: {{params.bookId}}<br />
-        Chapter Id: {{params.chapterId}}
+        <div>
+          controller: {{name}}<br />
+          Book Id: {{params.bookId}}<br />
+          Chapter Id: {{params.chapterId}}
+        </div>
+      </file>
+
+      <file name="animations.css">
+        .example-leave-setup, .example-enter-setup {
+          -webkit-transition:all cubic-bezier(0.250, 0.460, 0.450, 0.940) 1.5s;
+          -moz-transition:all cubic-bezier(0.250, 0.460, 0.450, 0.940) 1.5s;
+          -ms-transition:all cubic-bezier(0.250, 0.460, 0.450, 0.940) 1.5s;
+          -o-transition:all cubic-bezier(0.250, 0.460, 0.450, 0.940) 1.5s;
+          transition:all cubic-bezier(0.250, 0.460, 0.450, 0.940) 1.5s;
+        }
+
+        .example-animate-container {
+          position:relative;
+          height:100px;
+        }
+
+        .example-animate-container > * {
+          display:block;
+          width:100%;
+          border-left:1px solid black;
+
+          position:absolute;
+          top:0;
+          left:0;
+          right:0;
+          bottom:0;
+          padding:10px;
+        }
+
+        .example-enter-setup {
+          left:100%;
+        }
+        .example-enter-setup.example-enter-start {
+          left:0;
+        }
+
+        .example-leave-setup { }
+        .example-leave-setup.example-leave-start {
+          left:-100%;
+        }
       </file>
 
       <file name="script.js">
@@ -105,15 +159,16 @@
  * Emitted every time the ngView content is reloaded.
  */
 var ngViewDirective = ['$http', '$templateCache', '$route', '$anchorScroll', '$compile',
-                       '$controller',
+                       '$controller', '$animator',
                function($http,   $templateCache,   $route,   $anchorScroll,   $compile,
-                        $controller) {
+                        $controller,  $animator) {
   return {
     restrict: 'ECA',
     terminal: true,
     link: function(scope, element, attr) {
       var lastScope,
-          onloadExp = attr.onload || '';
+          onloadExp = attr.onload || '',
+          animate = $animator(scope, attr);
 
       if (scope.hasOwnProperty('$router')) {
         var router = $route.scopedRouter(scope)
@@ -141,7 +196,7 @@ var ngViewDirective = ['$http', '$templateCache', '$route', '$anchorScroll', '$c
       }
 
       function clearContent() {
-        element.html('');
+        animate.leave(element.contents(), element);
         destroyLastScope();
       }
 
@@ -151,8 +206,8 @@ var ngViewDirective = ['$http', '$templateCache', '$route', '$anchorScroll', '$c
             template = locals && locals.$template;
 
         if (template) {
-          element.html(template);
-          destroyLastScope();
+          clearContent();
+          animate.enter(jqLite('<div></div>').html(template).contents(), element);
 
           var link = $compile(element.contents()),
               current = route.current,
@@ -162,7 +217,7 @@ var ngViewDirective = ['$http', '$templateCache', '$route', '$anchorScroll', '$c
           if (current.controller) {
             locals.$scope = lastScope;
             controller = $controller(current.controller, locals);
-            element.contents().data('$ngControllerController', controller);
+            element.children().data('$ngControllerController', controller);
           }
 
           link(lastScope);

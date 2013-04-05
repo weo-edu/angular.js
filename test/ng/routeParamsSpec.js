@@ -103,4 +103,15 @@ describe('$routeParams', function() {
   });
 
 
+  it('should support route params not preceded by slashes', function() {
+    module(function($routeProvider) {
+      $routeProvider.when('/bar:barId/foo:fooId/', {});
+    });
+
+    inject(function($rootScope, $route, $location, $routeParams) {
+      $location.path('/barbarvalue/foofoovalue/');
+      $rootScope.$digest();
+      expect($routeParams).toEqual({barId: 'barvalue', fooId: 'foovalue'});
+    });
+  });
 });

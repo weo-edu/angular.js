@@ -74,8 +74,22 @@ function $RouteProvider(){
    *
    * @param {string} path Route path (matched against `$location.path`). If `$location.path`
    *    contains redundant trailing slash or is missing one, the route will still match and the
-   *    `$location.path` will be updated to add or drop the trailing slash to exacly match the
+   *    `$location.path` will be updated to add or drop the trailing slash to exactly match the
    *    route definition.
+   *
+   *      * `path` can contain named groups starting with a colon (`:name`). All characters up
+   *        to the next slash are matched and stored in `$routeParams` under the given `name`
+   *        when the route matches.
+   *      * `path` can contain named groups starting with a star (`*name`). All characters are
+   *        eagerly stored in `$routeParams` under the given `name` when the route matches.
+   *
+   *    For example, routes like `/color/:color/largecode/*largecode/edit` will match
+   *    `/color/brown/largecode/code/with/slashs/edit` and extract:
+   *
+   *      * `color: brown`
+   *      * `largecode: code/with/slashs`.
+   *
+   *
    * @param {Object} route Mapping information to be assigned to `$route.current` on route
    *    match.
    *
@@ -84,12 +98,24 @@ function $RouteProvider(){
    *    - `controller` – `{(string|function()=}` – Controller fn that should be associated with newly
    *      created scope or the name of a {@link angular.Module#controller registered controller}
    *      if passed as a string.
-   *    - `template` – `{string=}` –  html template as a string that should be used by
-   *      {@link ng.directive:ngView ngView} or
+   *    - `template` – `{string=|function()=}` – html template as a string or function that returns
+   *      an html template as a string which should be used by {@link ng.directive:ngView ngView} or
    *      {@link ng.directive:ngInclude ngInclude} directives.
-   *      this property takes precedence over `templateUrl`.
-   *    - `templateUrl` – `{string=}` – path to an html template that should be used by
-   *      {@link ng.directive:ngView ngView}.
+   *      This property takes precedence over `templateUrl`.
+   *
+   *      If `template` is a function, it will be called with the following parameters:
+   *
+   *      - `{Array.<Object>}` - route parameters extracted from the current
+   *        `$location.path()` by applying the current route
+   *
+   *    - `templateUrl` – `{string=|function()=}` – path or function that returns a path to an html
+   *      template that should be used by {@link ng.directive:ngView ngView}.
+   *
+   *      If `templateUrl` is a function, it will be called with the following parameters:
+   *
+   *      - `{Array.<Object>}` - route parameters extracted from the current
+   *        `$location.path()` by applying the current route
+   *
    *    - `resolve` - `{Object.<string, function>=}` - An optional map of dependencies which should
    *      be injected into the controller. If any of these dependencies are promises, they will be
    *      resolved and converted to a value before the controller is instantiated and the
@@ -119,6 +145,11 @@ function $RouteProvider(){
    *
    *      If the option is set to `false` and url in the browser changes, then
    *      `$routeUpdate` event is broadcasted on the root scope.
+   *
+   *    - `[caseInsensitiveMatch=false]` - {boolean=} - match routes without being case sensitive
+   *
+   *      If the option is set to `true`, then the particular route can be matched without being
+   *      case sensitive
    *
    * @returns {Object} self
    *
@@ -390,8 +421,9 @@ function $RouteProvider(){
      * {@link ng.directive:ngView ngView} listens for the directive
      * to instantiate the controller and render the view.
      *
+     * @param {Object} angularEvent Synthetic event object.
      * @param {Route} current Current route information.
-     * @param {Route} previous Previous route information.
+     * @param {Route|Undefined} previous Previous route information, or undefined if current is first route entered.
      */
 
     /**
@@ -418,8 +450,7 @@ function $RouteProvider(){
      * instance of the Controller.
      */
 
-    var matcher = switchRouteMatcher,
-        forceReload = false,
+    var forceReload = false,
         $route = {
           /**
            * @ngdoc method
@@ -520,8 +551,6 @@ function $RouteProvider(){
 
       if (!route.regexp) return null;
 
-
-
       var m = route.regexp.exec(on);
       if (!m) return null;
 
@@ -567,10 +596,9 @@ function $RouteProvider(){
         return params;
       }
 
-      if (next && last && next.$route === last.$route && 
-        equals(next.pathParams, last.pathParams) && 
-        (!(!equals(next.params, last.params) && next.reloadOnSearch)) && 
-        !forceReload) {
+
+      if (next && last && next.$$route === last.$$route
+          && equals(next.pathParams, last.pathParams) && !next.reloadOnSearch && !forceReload) {
         last.params = next.params;
 
         scope.$routeParams = scopedParams(next.params);
@@ -595,30 +623,31 @@ function $RouteProvider(){
         $q.when(next).
           then(function() {
             if (next) {
-              var keys = [],
-                  values = [],
+              var locals = extend({}, next.resolve),
                   template;
 
-              forEach(next.resolve || {}, function(value, key) {
-                keys.push(key);
-                values.push(isString(value) ? $injector.get(value) : $injector.invoke(value));
+              forEach(locals, function(value, key) {
+                locals[key] = isString(value) ? $injector.get(value) : $injector.invoke(value);
               });
+
               if (isDefined(template = next.template)) {
+                if (isFunction(template)) {
+                  template = template(next.params);
+                }
               } else if (isDefined(template = next.templateUrl)) {
-                template = $http.get(template, {cache: $templateCache}).
-                    then(function(response) { return response.data; });
+                if (isFunction(template)) {
+                  template = template(next.params);
+                }
+                if (isDefined(template)) {
+                  next.loadedTemplateUrl = template;
+                  template = $http.get(template, {cache: $templateCache}).
+                      then(function(response) { return response.data; });
+                }
               }
               if (isDefined(template)) {
-                keys.push('$template');
-                values.push(template);
+                locals['$template'] = template;
               }
-              return $q.all(values).then(function(values) {
-                var locals = {};
-                forEach(values, function(value, index) {
-                  locals[keys[index]] = value;
-                });
-                return locals;
-              });
+              return $q.all(locals);
             }
           }).
           // after route change
@@ -648,11 +677,11 @@ function $RouteProvider(){
           params, match;
 
       forEach(routes, function(route, path) {
-        if (!match && (params = matcher($location.path(), route))) {
+        if (!match && (params = switchRouteMatcher($location.path(), route))) {
           match = inherit(route, {
             params: extend({}, $location.search(), params),
             pathParams: params});
-          match.$route = route;
+          match.$$route = route;
         }
       });
 
@@ -661,7 +690,7 @@ function $RouteProvider(){
     }
 
     /**
-     * @returns interpolation of the redirect path with the parametrs
+     * @returns interpolation of the redirect path with the parameters
      */
     function interpolate(string, params, scope) {
       if (scope) {

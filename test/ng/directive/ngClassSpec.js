@@ -236,9 +236,20 @@ describe('ngClass', function() {
   }));
 
 
+  it('should not mess up class value due to observing an interpolated class attribute', inject(function($rootScope, $compile) {
+    $rootScope.foo = true;
+    $rootScope.$watch("anything", function() {
+      $rootScope.foo = false;
+    });
+    element = $compile('<div ng-class="{foo:foo}"></div>')($rootScope);
+    $rootScope.$digest();
+    expect(element.hasClass('foo')).toBe(false);
+  }));
+
+
   it('should update ngClassOdd/Even when model is changed by filtering', inject(function($rootScope, $compile) {
     element = $compile('<ul>' +
-      '<li ng-repeat="i in items" ' +
+      '<li ng-repeat="i in items track by $index" ' +
       'ng-class-odd="\'odd\'" ng-class-even="\'even\'"></li>' +
       '<ul>')($rootScope);
     $rootScope.items = ['a','b','a'];
