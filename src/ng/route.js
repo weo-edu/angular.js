@@ -166,7 +166,7 @@ function $RouteProvider(){
     }
 
     pushRoute(scope, extend(
-      {reloadOnSearch: true}, 
+      {reloadOnSearch: true},
       route,
       path && pathRegExp(path, extend({}, options, opts))
     ));
@@ -239,11 +239,11 @@ function $RouteProvider(){
    * @returns {Object} self
    */
    function otherwise(scope, params) {
-    var key = scopeKey(scope), 
+    var key = scopeKey(scope),
         routes = scopedRoutes[key].routes;
 
     routes[null] = extend(
-      {reloadOnSearch: true}, 
+      {reloadOnSearch: true},
       params);
     return this;
    }
@@ -260,7 +260,7 @@ function $RouteProvider(){
    *   - `sensitive` enable case-sensitive routes
    *   - `strict` disable strict matching for trailing slashes
    */
-  
+
   this.options = function(opts) {
     extend(options, opts);
     return this;
@@ -537,7 +537,7 @@ function $RouteProvider(){
     return $route;
 
     /////////////////////////////////////////////////////
-    
+
     function basePath(scope) {
       var current  = $route.scoped(scope).current;
       if (!current) return;
@@ -598,7 +598,9 @@ function $RouteProvider(){
 
 
       if (next && last && next.$$route === last.$$route
-          && equals(next.pathParams, last.pathParams) && !next.reloadOnSearch && !forceReload) {
+          && equals(next.pathParams, last.pathParams)
+          && (!(!equals(next.params, last.params) && next.reloadOnSearch))
+          && !forceReload) {
         last.params = next.params;
 
         scope.$routeParams = scopedParams(next.params);
@@ -640,7 +642,7 @@ function $RouteProvider(){
                 }
                 if (isDefined(template)) {
                   next.loadedTemplateUrl = template;
-                  template = $http.get(template, {cache: $templateCache}).
+                  template = $http.get(template, {cache: $templateCache, headers: {Accept: 'x-angular-template'}}).
                       then(function(response) { return response.data; });
                 }
               }

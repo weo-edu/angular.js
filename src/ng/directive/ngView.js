@@ -170,7 +170,7 @@ var ngViewDirective = ['$http', '$templateCache', '$route', '$anchorScroll', '$c
           onloadExp = attr.onload || '',
           animate = $animator(scope, attr);
 
-      if (scope.hasOwnProperty('$router')) {
+      if ('$router' in scope) {
         var router = $route.scopedRouter(scope)
         scope.$router(router);
         router.updateRoute();

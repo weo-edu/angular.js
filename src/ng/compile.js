@@ -989,7 +989,7 @@ function $CompileProvider($provide) {
 
       $compileNode.html('');
 
-      $http.get(templateUrl, {cache: $templateCache}).
+      $http.get(templateUrl, {cache: $templateCache, headers: {Accept: 'x-angular-template'}}).
         success(function(content) {
           var compileNode, tempTemplateAttrs, $template;
 

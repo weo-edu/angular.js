@@ -149,7 +149,7 @@ var ngIncludeDirective = ['$http', '$templateCache', '$anchorScroll', '$compile'
           var thisChangeId = ++changeCounter;
 
           if (src) {
-            $http.get(src, {cache: $templateCache}).success(function(response) {
+            $http.get(src, {cache: $templateCache, headers: {Accept: 'x-angular-template'}}).success(function(response) {
               if (thisChangeId !== changeCounter) return;
 
               if (childScope) childScope.$destroy();
