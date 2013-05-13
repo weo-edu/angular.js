@@ -188,29 +188,15 @@ function $RootScopeProvider(){
           this.$$childHead = this.$$childTail = child;
         }
 
-        // XXX This helps the memory leak in V8 to not grow
-        // without bound.  Remove this once the issue is fixed.
-        var off = child.$on('$destroy', function() {
-          off();
-          off = null;
-          if(child.$$watchers) {
-            child.$$watchers.length = 0;
-            child.$$watchers = null;
-          }
+        // Help out chrome's GC
+        child.$on('$destroy', function() {
           if(Child)
             Child.prototype = null;
-          child['this'] = null;
+          // Async so that the $broadcast('$destroy') can traverse the rest
           setTimeout(function() {
             child.__proto__ = {};
-            child.$parent = null;
-            child.$$prevSibling = null;
-            child.$$nextSibling = null;
-            child.$$childHead = null;
-            child.$$childTail = null;
-            if(child.$$listeners) {
-              child.$$listeners.length = 0;
-              child.$$listeners = null;
-            }
+            for(var i in child)
+              child[i] = null;
             child = null;
           });
         });
