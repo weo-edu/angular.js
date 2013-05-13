@@ -187,6 +187,33 @@ function $RootScopeProvider(){
         } else {
           this.$$childHead = this.$$childTail = child;
         }
+
+        // XXX This helps the memory leak in V8 to not grow
+        // without bound.  Remove this once the issue is fixed.
+        var off = child.$on('$destroy', function() {
+          off();
+          off = null;
+          if(child.$$watchers) {
+            child.$$watchers.length = 0;
+            child.$$watchers = null;
+          }
+          if(Child)
+            Child.prototype = null;
+          child['this'] = null;
+          setTimeout(function() {
+            child.__proto__ = {};
+            child.$parent = null;
+            child.$$prevSibling = null;
+            child.$$nextSibling = null;
+            child.$$childHead = null;
+            child.$$childTail = null;
+            if(child.$$listeners) {
+              child.$$listeners.length = 0;
+              child.$$listeners = null;
+            }
+            child = null;
+          });
+        });
         return child;
       },
 
@@ -760,7 +787,7 @@ function $RootScopeProvider(){
        *     propagation (available only for events that were `$emit`-ed).
        *   - `stopDescent` - `{function=}`: calling `stopDescent` function will cancel further event
        *     propagation to listeners on scope and children scope. events will continue to propogate to
-       *     sibling scopes and their children (available only for events that were `$broadcast`-ed). 
+       *     sibling scopes and their children (available only for events that were `$broadcast`-ed).
        *   - `preventDefault` - `{function}`: calling `preventDefault` sets `defaultPrevented` flag to true.
        *   - `defaultPrevented` - `{boolean}`: true if `preventDefault` was called.
        *
