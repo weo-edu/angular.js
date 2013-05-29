@@ -1158,4 +1158,14 @@ describe('Scope', function() {
     }));
 
   });
+
+  describe('chrome gc leak', function() {
+    // V8 Issue: https://code.google.com/p/v8/issues/detail?id=2683
+    it('should clean up most of the scopes and not grow without bound', function() {
+      var outerScope = $rootScope.$new();
+      for(var i = 0; i < 100; i++) {
+        var scope = outerScope.$new();
+      }
+    });
+  });
 });
